@@ -32,11 +32,11 @@ class MineRequest extends Request
         $ip = $this->getServerParams()['remote_addr'] ?? '0.0.0.0';
         $headers = $this->getHeaders();
 
-        if (isset($headers['x-real-ip'])) {
+        if (isset($headers['x-forwarded-for'])) {
+            $ip = explode(",",$headers['x-forwarded-for'][0])[0];
+        }else if (isset($headers['x-real-ip'])) {
             $ip = $headers['x-real-ip'][0];
-        } else if (isset($headers['x-forwarded-for'])) {
-            $ip = $headers['x-forwarded-for'][0];
-        } else if (isset($headers['http_x_forwarded_for'])) {
+        }  else if (isset($headers['http_x_forwarded_for'])) {
             $ip = $headers['http_x_forwarded_for'][0];
         }
 

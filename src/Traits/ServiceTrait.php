@@ -64,6 +64,7 @@ trait ServiceTrait
      */
     public function getPageList(?array $params = null, bool $isScope = true): array
     {
+        $params = array_merge(['orderBy' => 'id', 'orderType' => 'desc'], $params);
         if ($params['select'] ?? null) {
             $params['select'] = explode(',', $params['select']);
         }
