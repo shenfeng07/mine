@@ -20,6 +20,8 @@ use League\Flysystem\Filesystem;
 use Mine\Exception\NormalStatusException;
 use Hyperf\HttpMessage\Upload\UploadedFile;
 use Mine\Helper\Str;
+use Psr\Container\ContainerExceptionInterface;
+use Psr\Container\NotFoundExceptionInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\Container\ContainerInterface;
 
@@ -301,10 +303,15 @@ class MineUpload
      * @param string|null $path
      * @param string $filename
      * @return string
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
      */
     public function assembleUrl(?string $path, string $filename): string
     {
-        return $this->getPath($path, true) . '/' . $filename;
+        return
+            \Hyperf\Config\config('file.storage.'.$this->getMappingMode().'.schema',"")
+            .\Hyperf\Config\config('file.storage.'.$this->getMappingMode().'.domain',"").
+            $this->getPath($path, true) . '/' . $filename;
     }
 
     /**
@@ -341,6 +348,7 @@ class MineUpload
             '2' => 'oss',
             '3' => 'qiniu',
             '4' => 'cos',
+            '5' => 's3',
             default => 'local',
         };
     }
