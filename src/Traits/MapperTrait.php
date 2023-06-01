@@ -15,6 +15,7 @@ use Hyperf\Contract\LengthAwarePaginatorInterface;
 use Hyperf\Database\Model\Builder;
 use Hyperf\Database\Model\Model;
 use Mine\Annotation\Transaction;
+use Mine\Exception\MineException;
 use Mine\Exception\NormalStatusException;
 use Mine\MineCollection;
 use Mine\MineModel;
@@ -54,6 +55,67 @@ trait MapperTrait
             $params['pageSize'] ?? $this->model::PAGE_SIZE, ['*'], $pageName, $params[$pageName] ?? 1
         );
         return $this->setPaginate($paginate, $params);
+    }
+
+    /**
+     * 远程通用列表查询
+     * 主要服务于远程下拉菜单使用，其功能也支持单选、复选、级联选择等组件的使用，但下拉菜单组件适配最好。
+     * 接口支持分页、不分页、模型关联、条件过滤、排序、分组，数据权限等一系列功能
+     *
+     * 声明提示：该接口虽然方便快捷，但由于参数是前端传入，后端对接口仅在控制器做了登录检查，有一定的安全性影响，需谨慎使用。
+     */
+    public function getRemoteList(?array $params): array
+    {
+        if (! config('mineadmin.remote_api_enabled')) {
+            throw new MineException('系统未启用【远程通用列表查询】', 500);
+        }
+        /* @var $model MineModel */
+        $model = $this->getModel();
+        $query = null;
+        if (!empty($params['relations']) && is_array($params['relations'])) {
+            foreach ($params['relations'] as $item) {
+                $this->dynamicRelations($model, $item);
+                /* @var $query Builder */
+                $query = $model->with([ $item['name'] => function($query) use ($item) {
+                    $paramsWhere = [];
+                    if (!empty($item['params']) && is_array($item['params'])) foreach ($item['params'] as $name => $where) {
+                        $paramsWhere[$name] = $where;
+                    }
+                    return $this->emptyBuildQuery($paramsWhere, $query);
+                }]);
+            }
+        }
+
+        /* @var $query Builder */
+        if (is_null($query)) $query = $model::query();
+
+        $paramsWhere = [];
+        if (!empty($params['params']) && is_array($params['params'])) foreach ($params['params'] as $name => $where) {
+            $paramsWhere[$name] = $where;
+        }
+        $query = $this->emptyBuildQuery($paramsWhere, $query);
+
+        if (!empty($params['sort']) && is_array($params['sort'])) foreach($params['sort'] as $name => $sortType) {
+            $query->orderBy($name, $sortType ?? 'asc');
+        }
+
+        if (!empty($params['group']) && is_array($params['group'])) foreach($params['group'] as $sortType) {
+            $query->groupBy($sortType);
+        }
+
+        if (isset($params['dataScope']) && $params['dataScope'] === true) {
+            $query->userDataScope();
+        }
+
+        if (isset($params['openPage']) && $params['openPage'] === true) {
+            $pageName = $params['pageName'] ?? 'page';
+            $pageSize = $params['pageSize'] ?? $this->model::PAGE_SIZE;
+            return $this->setPaginate($query->paginate($pageSize, $params['select'] ?? ['*'], $pageName, $params[$pageName] ?? 1));
+        }
+
+        return method_exists($this, 'handleItems')
+            ? ( new MineCollection($this->handleItems($query->get($params['select'] ?? ['*']))) )->toArray()
+            : $query->get($params['select'] ?? ['*'])->toArray();
     }
 
     /**
@@ -161,7 +223,7 @@ trait MapperTrait
      * @param bool $removePk
      * @return array
      */
-    protected function filterQueryAttributes(array $fields, bool $removePk = false): array
+    public function filterQueryAttributes(array $fields, bool $removePk = false): array
     {
         $model = new $this->model;
         $attrs = $model->getFillable();
@@ -184,7 +246,7 @@ trait MapperTrait
      * @param array $data
      * @param bool $removePk
      */
-    protected function filterExecuteAttributes(array &$data, bool $removePk = false): void
+    public function filterExecuteAttributes(array &$data, bool $removePk = false): void
     {
         $model = new $this->model;
 //        $attrs = $model->getFillable();
@@ -463,10 +525,10 @@ trait MapperTrait
      * 搜索参数注入
      * @param $params
      * @param array $where
-     * @param \Hyperf\Database\Model\Builder|null $query
-     * @return \Mine\MineModel|\Hyperf\Database\Model\Builder
+     * @param mixed|null $query
+     * @return mixed
      */
-    public function paramsEmptyQuery($params, array $where = [], Builder $query = null): MineModel|Builder
+    public function paramsEmptyQuery($params, array $where = [], mixed $query = null): mixed
     {
         if (!$query) {
             $query = $this->model::query();
@@ -536,19 +598,19 @@ trait MapperTrait
      *  'field' => ['=', 'index']
      * ]
      * @param array $paramsWhere
-     * @param $query
-     * @return \Mine\MineModel|\Hyperf\Database\Model\Builder
+     * @param mixed $query
+     * @return mixed
      */
-    public function emptyBuildQuery(array $paramsWhere = [], $query = null): MineModel|Builder
+    public function emptyBuildQuery(array $paramsWhere = [], mixed $query = null): mixed
     {
         if (!$query) {
             $query = $this->model::query();
         }
         $object = new class($paramsWhere, $query){
 
-            public Builder $query;
+            public mixed $query;
 
-            public function __construct($paramsWhere, Builder $query)
+            public function __construct($paramsWhere, mixed $query)
             {
                 $this->query = $query;
                 foreach ($paramsWhere as $field => $value) {
@@ -589,11 +651,44 @@ trait MapperTrait
                 return [$operator, $value];
             }
 
-            public function getQuery(): Builder
+            public function getQuery(): mixed
             {
                 return $this->query;
             }
         };
         return $object->getQuery();
+    }
+
+    public function dynamicRelations(\Mine\MineModel &$model, &$config)
+    {
+        $model->resolveRelationUsing($config['name'], function($primaryModel) use($config) {
+            $namespace = str_replace('.', "\\", $config['model']);
+            if ($config['type'] === 'hasOne') {
+                return $primaryModel->hasOne(new $namespace, $config['foreignKey'], $config['localKey']);
+            }
+            if ($config['type'] === 'hasMany') {
+                return $primaryModel->hasMany(new $namespace, $config['foreignKey'], $config['localKey']);
+            }
+            if ($config['type'] === 'belongsTo') {
+                return $primaryModel->belongsTo(new $namespace, $config['foreignKey'], $config['localKey']);
+            }
+            if ($config['type'] === 'belongsToMany') {
+                $primaryModel->belongsToMany(
+                    new $namespace,
+                    $config['middleTable'],
+                    $config['foreignKey'],
+                    $config['localKey']
+                );
+                if ($config['as']) {
+                    $primaryModel->as($config['as']);
+                }
+                if ($config['where'] && is_array($config['where'])) foreach ($config['where'] as $field => $value) {
+                    $primaryModel->wherePivot($field, $value);
+                }
+                if ($config['whereIn'] && is_array($config['whereIn'])) foreach ($config['whereIn'] as $field => $value) {
+                    $primaryModel->wherePivotIn($field, $value);
+                }
+            }
+        });
     }
 }
