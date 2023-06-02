@@ -45,13 +45,13 @@ class Ip2region
     {
         $region = $this->searcher->search($ip);
 
-        if (!$region) return t('jwt.unknown');
+        if (!$region) return 'unknown';
 
         list($country, $number, $province, $city, $network) = explode('|', $region);
         if ($country == '中国') {
             return $province.'-'.$city.':'.$network;
         } else if ($country == '0') {
-            return t('jwt.unknown');
+            return 'unknown';
         } else {
             return $country;
         }

@@ -243,7 +243,11 @@ class Str
      */
     public static function ipToRegion(string $ip): string
     {
-        return make(Ip2Region::class)->search($ip);
+        try{
+            return make(Ip2Region::class)->search($ip)
+        }catch (\Exception $e){
+            return "";
+        }
     }
 
     /**
