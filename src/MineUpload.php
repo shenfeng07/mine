@@ -16,6 +16,7 @@ namespace Mine;
 use App\Setting\Service\SettingConfigService;
 use Hyperf\Di\Annotation\Inject;
 use Hyperf\Filesystem\FilesystemFactory;
+use Hyperf\Guzzle\ClientFactory;
 use League\Flysystem\Filesystem;
 use Mine\Exception\NormalStatusException;
 use Hyperf\HttpMessage\Upload\UploadedFile;
@@ -189,19 +190,21 @@ class MineUpload
         $filename = $this->getNewName() . '.jpg';
 
         try {
-            $content = file_get_contents($data['url']);
+            $clientFactory = $this->container->get(ClientFactory::class);
+            $client = $clientFactory->create();
+            $response = $client->get($data['url'],[
+                'timeout' => 30,
+                'headers' => $data['headers']??[],
+            ]);
 
-            $handle = fopen($data['url'], 'rb');
-            $meta = stream_get_meta_data($handle);
-            fclose($handle);
+            $content = $response->getBody()->getContents();
 
-            $dataInfo = $meta['wrapper_data']['headers'] ?? $meta['wrapper_data'];
+            $dataInfo = $response->getHeaders();
             $size = 0;
 
-            foreach ($dataInfo as $va) {
-                if ( preg_match('/length/iU', $va) ) {
-                    $ts = explode(':', $va);
-                    $size = intval(trim(array_pop($ts)));
+            foreach ($dataInfo as $key => $va) {
+                if ( preg_match('/length/iU', $key) ) {
+                    $size = intval(trim(array_pop($va)));
                     break;
                 }
             }
