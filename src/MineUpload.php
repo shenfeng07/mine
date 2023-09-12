@@ -190,6 +190,13 @@ class MineUpload
         $filename = $this->getNewName() . '.jpg';
 
         try {
+            if (preg_match('/^\/\//', $data['url'])) {
+                $data['url'] = 'http:' . $data['url'];
+            }
+            if (! preg_match('/^(http|https):\/\//i', $data['url'])) {
+                throw new NormalStatusException('图片地址请以 http 或 https 开头', 500);
+            }
+
             $clientFactory = $this->container->get(ClientFactory::class);
             $client = $clientFactory->create();
             $response = $client->get($data['url'],[
@@ -351,7 +358,14 @@ class MineUpload
             '2' => 'oss',
             '3' => 'qiniu',
             '4' => 'cos',
+<<<<<<< HEAD
             '5' => 's3',
+=======
+            '5' => 'ftp',
+            '6' => 'memory',
+            '7' => 's3',
+            '8' => 'minio',
+>>>>>>> mine
             default => 'local',
         };
     }
