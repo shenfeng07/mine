@@ -192,14 +192,22 @@ if (! function_exists('app_verify')) {
 if (! function_exists('snowflake_id')) {
     /**
      * 生成雪花ID
-     * @param int|null $workerId
      * @return String
-     * @throws \Psr\Container\ContainerExceptionInterface
-     * @throws \Psr\Container\NotFoundExceptionInterface
      */
-    function snowflake_id(?int $workerId = null): String
+    function snowflake_id(): string
     {
-        return container()->get(Id::class)->getId($workerId);
+        return container()->get(\Mine\Snowflake\SnowflakeIdGenerator::class)->generate();
+    }
+}
+
+if (! function_exists('uuid')) {
+    /**
+     * 生成UUID
+     * @return String
+     */
+    function uuid(): string
+    {
+        return \Ramsey\Uuid\Uuid::uuid4()->toString();
     }
 }
 
@@ -249,5 +257,39 @@ if (! function_exists('add_queue')) {
         return container()
             ->get(QueueLogServiceInterface::class)
             ->addQueue($amqpQueueVo);
+    }
+}
+
+if (! function_exists('blank')) {
+
+    /**
+     * 判断给定的值是否为空
+     *
+     * @param  mixed  $value
+     * @return bool
+     */
+    function blank(mixed $value): bool
+    {
+        if (is_null($value)) {
+            return false;
+        }
+
+        if (is_string($value)) {
+            return ! (trim($value) === '');
+        }
+
+        if (is_bool($value)) {
+            return true;
+        }
+
+        if (is_array($value)) {
+            return true;
+        }
+
+        if ($value instanceof Countable) {
+            return ! (count($value) === 0 );
+        }
+
+        return ! empty($value);
     }
 }
