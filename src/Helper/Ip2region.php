@@ -2,39 +2,29 @@
 
 namespace Mine\Helper;
 
-use Hyperf\Contract\StdoutLoggerInterface;
+use GeoIp2\Database\Reader;
 use Hyperf\Support\Composer;
-use Psr\Container\ContainerExceptionInterface;
-use Psr\Container\NotFoundExceptionInterface;
-use Exception;
-use XdbSearcher;
+use MaxMind\Db\Reader\InvalidDatabaseException;
+use Mine\Mine;
+
 
 class Ip2region
 {
 
-    protected XdbSearcher $searcher;
+    protected Reader $reader;
 
     /**
-     * @see https://github.com/zoujingli/ip2region
-     * @throws Exception
+     * @throws InvalidDatabaseException
      */
-    public function __construct(protected StdoutLoggerInterface $logger)
+    public function __construct()
     {
+
         $composerLoader = Composer::getLoader();
-        $path = $composerLoader->findFile(XdbSearcher::class);
+        $path = $composerLoader->findFile(Mine::class);
 
-        $dbFile = dirname(realpath($path)).'/ip2region.xdb';
+        $dbFile = dirname(realpath($path)).'/GeoLite2-City.mmdb';
 
-        // 1、从 dbPath 加载整个 xdb 到内存。
-        $cBuff = XdbSearcher::loadContentFromFile($dbFile);
-        if ($cBuff === null) {
-            $this->logger->error("failed to load content buffer from {db_file}", ['db_file' => $dbFile]);
-            return;
-        }
-        // 2、使用全局的 cBuff 创建带完全基于内存的查询对象。
-        $this->searcher = XdbSearcher::newWithBuffer($cBuff);
-
-        // 备注：并发使用，用整个 xdb 缓存创建的 searcher 对象可以安全用于并发。
+        $this->reader = new Reader($dbFile);
     }
 
     /**
@@ -43,17 +33,11 @@ class Ip2region
      */
     public function search(string $ip): string
     {
-        $region = $this->searcher->search($ip);
-
-        if (!$region) return 'unknown';
-
-        list($country, $number, $province, $city, $network) = explode('|', $region);
-        if ($country == '中国') {
-            return $province.'-'.$city.':'.$network;
-        } else if ($country == '0') {
+        try{
+            $record = $this->reader->city($ip);
+            return ($record->country->names['zh-CN']??"").",".($record->city->names['zh-CN']??"");
+        }catch (\Throwable $e){
             return 'unknown';
-        } else {
-            return $country;
         }
     }
 }
