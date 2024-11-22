@@ -22,6 +22,10 @@ class UserLoginAfter
 
     public string $token;
 
+    public string $ip;
+
+    public string $ua;
+
     public function __construct(array $userinfo)
     {
         $this->userinfo = $userinfo;
