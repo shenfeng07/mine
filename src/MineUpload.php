@@ -259,6 +259,81 @@ class MineUpload
         return $fileInfo;
     }
 
+    public function handleSaveNetworkVideo(array $data): array
+    {
+        $path = $this->getPath($data['path'] ?? null, $this->getStorageMode() != 1);
+        $filename = $this->getNewName() . '.mp4';
+
+        try {
+            if (preg_match('/^\/\//', $data['url'])) {
+                $data['url'] = 'http:' . $data['url'];
+            }
+            if (! preg_match('/^(http|https):\/\//i', $data['url'])) {
+                throw new NormalStatusException('地址请以 http 或 https 开头', 500);
+            }
+
+            $clientFactory = $this->container->get(ClientFactory::class);
+            $client = $clientFactory->create();
+            $response = $client->get($data['url'],[
+                'timeout' => 120,
+                'headers' => $data['headers']??[],
+            ]);
+
+            $content = $response->getBody()->getContents();
+
+            $dataInfo = $response->getHeaders();
+            $size = 0;
+
+            foreach ($dataInfo as $key => $va) {
+                if ( preg_match('/length/iU', $key) ) {
+                    $size = intval(trim(array_pop($va)));
+                    break;
+                }
+            }
+
+            $realPath = BASE_PATH . '/runtime/' . $filename;
+            $fs = container()->get(\Hyperf\Support\Filesystem\Filesystem::class);
+            $fs->put($realPath, $content);
+
+            $hash = md5_file($realPath);
+            $fs->delete($realPath);
+
+            if (! $hash) {
+                throw new \Exception(t('network_image_save_fail'));
+            }
+
+            if ($model = (new \App\System\Mapper\SystemUploadFileMapper)->getFileInfoByHash($hash)) {
+                return $model->toArray();
+            }
+
+            try {
+                $this->filesystem->write($path . '/' . $filename, $content);
+            } catch (\Exception $e) {
+                throw new \Exception(t('network_image_save_fail'));
+            }
+
+        } catch (\Throwable $e) {
+            throw new NormalStatusException($e->getMessage(), 500);
+        }
+
+        $fileInfo = [
+            'storage_mode' => $this->getStorageMode(),
+            'origin_name' => md5((string) time()).'.mp4',
+            'object_name' => $filename,
+            'mime_type' => 'video/mp4',
+            'storage_path' => $path,
+            'suffix' => 'mp4',
+            'hash' => $hash,
+            'size_byte' => $size,
+            'size_info' => format_size($size * 1024),
+            'url' => $this->assembleUrl($data['path'] ?? null, $filename),
+        ];
+
+        $this->evDispatcher->dispatch(new \Mine\Event\UploadAfter($fileInfo));
+
+        return $fileInfo;
+    }
+
     /**
      * @param string $config
      * @param false $isContainRoot
