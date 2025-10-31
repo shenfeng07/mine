@@ -59,33 +59,66 @@ class MineCollection extends Collection
     }
 
     /**
-     * @param array $data
-     * @param int $parentId
-     * @param string $id
-     * @param string $parentField
-     * @param string $children
-     * @return array
+     * 非递归实现的树形结构生成算法（DeepSeek优化版）
      */
-    public function toTree(array $data = [], int $parentId = 0, string $id = 'id', string $parentField = 'parent_id', string $children='children'): array
+    public function toTree(array $data = [], int $parentId = 0, string $id = 'id', string $parentField = 'parent_id', string $children = 'children'): array
     {
         $data = $data ?: $this->toArray();
 
-        if (empty($data)) return [];
+        if (empty($data)) {
+            return [];
+        }
+
+        // 创建哈希表和索引
+        $hashMap = [];
+        $indexMap = [];
+
+        foreach ($data as $item) {
+            $currentId = $item[$id];
+            $parentValue = $item[$parentField] ?? 0;
+
+            $hashMap[$currentId] = $item;
+            if (!isset($indexMap[$parentValue])) {
+                $indexMap[$parentValue] = [];
+            }
+            $indexMap[$parentValue][] = $currentId;
+        }
 
         $tree = [];
 
-        foreach ($data as $value) {
-            if ($value[$parentField] == $parentId) {
-                $child = $this->toTree($data, $value[$id], $id, $parentField, $children);
-                if (!empty($child)) {
-                    $value[$children] = $child;
-                }
-                array_push($tree, $value);
+        // 构建树形结构
+        foreach ($indexMap[$parentId] ?? [] as $nodeId) {
+            if (isset($hashMap[$nodeId])) {
+                $this->buildTreeNode($hashMap[$nodeId], $indexMap, $hashMap, $children);
+                $tree[] = $hashMap[$nodeId];
             }
         }
 
-        unset($data);
         return $tree;
+    }
+
+    /**
+     * 构建树节点（优化版）
+     */
+    private function buildTreeNode(&$node, $indexMap, &$hashMap, $childrenKey): void
+    {
+        $nodeId = $node['id'];
+
+        if (isset($indexMap[$nodeId])) {
+            $childrenNodes = [];
+            foreach ($indexMap[$nodeId] as $childId) {
+                if (isset($hashMap[$childId])) {
+                    $childNode = $hashMap[$childId];
+                    $this->buildTreeNode($childNode, $indexMap, $hashMap, $childrenKey);
+                    $childrenNodes[] = $childNode;
+                }
+            }
+
+            // 只有在有子节点时才设置children字段
+            if (!empty($childrenNodes)) {
+                $node[$childrenKey] = $childrenNodes;
+            }
+        }
     }
 
     /**
