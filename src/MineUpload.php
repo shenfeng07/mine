@@ -187,7 +187,6 @@ class MineUpload
     public function handleSaveNetworkImage(array $data): array
     {
         $path = $this->getPath($data['path'] ?? null, $this->getStorageMode() != 1);
-        $filename = $this->getNewName() . '.jpg';
 
         try {
             if (preg_match('/^\/\//', $data['url'])) {
@@ -205,6 +204,30 @@ class MineUpload
             ]);
 
             $content = $response->getBody()->getContents();
+
+            // 根据图片真实内容判断后缀与 mime，避免 png 等格式被统一存成 jpg
+            $suffix = 'jpg';
+            $mime = 'image/jpeg';
+            $imageInfo = function_exists('getimagesizefromstring') ? @getimagesizefromstring($content) : false;
+            if ($imageInfo !== false) {
+                $ext = image_type_to_extension($imageInfo[2], false);
+                $suffix = $ext === 'jpeg' ? 'jpg' : $ext;
+                $mime = $imageInfo['mime'];
+            } else {
+                $finfoMime = (new \finfo(FILEINFO_MIME_TYPE))->buffer($content) ?: 'application/octet-stream';
+                $suffixMap = [
+                    'image/png' => 'png',
+                    'image/jpeg' => 'jpg',
+                    'image/gif' => 'gif',
+                    'image/webp' => 'webp',
+                    'image/bmp' => 'bmp',
+                    'image/avif' => 'avif',
+                    'image/svg+xml' => 'svg',
+                ];
+                $suffix = $suffixMap[$finfoMime] ?? 'jpg';
+                $mime = $finfoMime;
+            }
+            $filename = $this->getNewName() . '.' . $suffix;
 
             $dataInfo = $response->getHeaders();
             $size = 0;
@@ -243,11 +266,11 @@ class MineUpload
 
         $fileInfo = [
             'storage_mode' => $this->getStorageMode(),
-            'origin_name' => md5((string) time()).'.jpg',
+            'origin_name' => md5((string) time()).'.'.$suffix,
             'object_name' => $filename,
-            'mime_type' => 'image/jpg',
+            'mime_type' => $mime,
             'storage_path' => $path,
-            'suffix' => 'jpg',
+            'suffix' => $suffix,
             'hash' => $hash,
             'size_byte' => $size,
             'size_info' => format_size($size * 1024),
