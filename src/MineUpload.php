@@ -178,7 +178,7 @@ class MineUpload
 
     /**
      * 保存网络图片
-     * @param array $data
+     * @param array $data ['url', 'path', 'to_jpg', 'quality'] to_jpg=true 时非jpg图片转码为jpg保存
      * @return array
      * @throws \Psr\Container\ContainerExceptionInterface
      * @throws \Psr\Container\NotFoundExceptionInterface
@@ -227,6 +227,20 @@ class MineUpload
                 $suffix = $suffixMap[$finfoMime] ?? 'jpg';
                 $mime = $finfoMime;
             }
+
+            // 可选：非jpg图片转码为jpg保存，svg等无法解码的格式保持原格式
+            if (! empty($data['to_jpg']) && ! in_array($suffix, ['jpg', 'jpeg', 'svg'])) {
+                $jpgContent = $this->convertImageToJpg(
+                    $content,
+                    max(0, min(100, intval($data['quality'] ?? 85)))
+                );
+                if ($jpgContent !== null) {
+                    $content = $jpgContent;
+                    $suffix = 'jpg';
+                    $mime = 'image/jpeg';
+                }
+            }
+
             $filename = $this->getNewName() . '.' . $suffix;
 
             $dataInfo = $response->getHeaders();
@@ -280,6 +294,39 @@ class MineUpload
         $this->evDispatcher->dispatch(new \Mine\Event\UploadAfter($fileInfo));
 
         return $fileInfo;
+    }
+
+    /**
+     * 将图片内容转码为 jpg
+     * @param string $content 图片二进制内容
+     * @param int $quality 质量 0-100
+     * @return string|null 转码后的jpg内容，失败返回null（如GD不可用、格式无法解码）
+     */
+    protected function convertImageToJpg(string $content, int $quality = 85): ?string
+    {
+        if (! function_exists('imagecreatefromstring') || ! function_exists('imagejpeg')) {
+            return null;
+        }
+
+        $image = @imagecreatefromstring($content);
+        if ($image === false) {
+            return null;
+        }
+
+        // jpg不支持透明通道，透明区域填充白底，避免变黑
+        $width = imagesx($image);
+        $height = imagesy($image);
+        $canvas = imagecreatetruecolor($width, $height);
+        imagefill($canvas, 0, 0, imagecolorallocate($canvas, 255, 255, 255));
+        imagecopy($canvas, $image, 0, 0, 0, 0, $width, $height);
+        imagedestroy($image);
+
+        ob_start();
+        imagejpeg($canvas, null, $quality);
+        imagedestroy($canvas);
+        $jpg = ob_get_clean();
+
+        return is_string($jpg) && $jpg !== '' ? $jpg : null;
     }
 
     public function handleSaveNetworkVideo(array $data): array
